@@ -1,10 +1,10 @@
-/* Cole aqui a configuração do seu projeto Firebase (veja backend/LEIA-ME.md).
-   Estes valores NÃO são segredos: a proteção está nas regras do Firestore. */
+/* Configuração do projeto Firebase "acaigope-d8dc5".
+   Estes valores NÃO são segredos: a proteção está nas regras do Firestore (backend/firestore.rules). */
 export const firebaseConfig = {
-  apiKey: "COLE_AQUI",
-  authDomain: "COLE_AQUI",
-  projectId: "COLE_AQUI",
-  storageBucket: "COLE_AQUI",
-  messagingSenderId: "COLE_AQUI",
-  appId: "COLE_AQUI"
+  apiKey: "AIzaSyCcN3kKQ7iwWrmcK1CrIFwmRwVF4_fs-04",
+  authDomain: "acaigope-d8dc5.firebaseapp.com",
+  projectId: "acaigope-d8dc5",
+  storageBucket: "acaigope-d8dc5.firebasestorage.app",
+  messagingSenderId: "1078564727318",
+  appId: "1:1078564727318:web:cc1bc53eb720c33f1ea337"
 };
