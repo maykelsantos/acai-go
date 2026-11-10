@@ -38,7 +38,8 @@
     ["index.html", "Início", "inicio"],
     ["sabores.html", "Sabores e pedido", "sabores"],
     ["revenda.html", "Seja revendedor", "revenda"],
-    ["contato.html", "Contato", "contato"]
+    ["contato.html", "Contato", "contato"],
+    ["portal/index.html", "Área do revendedor", "portal"]
   ];
   const brand = `<a class="brand" href="index.html" aria-label="Açaí Go Gourmet, página inicial"><img src="img/logo.png" alt="" width="46" height="46"><span>Açaí<b>Go</b><small>Gourmet</small></span></a>`;
 
