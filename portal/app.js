@@ -25,7 +25,7 @@ function toast(t) {
   el.textContent = t; el.classList.add("on");
   clearTimeout(toast.t); toast.t = setTimeout(() => el.classList.remove("on"), 3200);
 }
-const marca = (link) => `<${link ? 'a href="../index.html"' : "div"} class="marca"><img src="../img/logo.png" alt=""><span><b>Açaí<i>Go</i></b><small>Portal do revendedor</small></span></${link ? "a" : "div"}>`;
+const marca = (link) => `<${link ? 'a href="../index.html"' : "div"} class="marca"><img src="../img/logo.png" alt=""><span><b>Açaí<i>Go</i> PE</b><small>Portal do revendedor</small></span></${link ? "a" : "div"}>`;
 
 /* ---------- Firebase ---------- */
 const emulador = ["localhost", "127.0.0.1"].includes(location.hostname) && new URLSearchParams(location.search).has("emulador");
@@ -41,7 +41,7 @@ const db = getFirestore(app);
 if (emulador) { connectAuthEmulator(auth, "http://127.0.0.1:9099", { disableWarnings: true }); connectFirestoreEmulator(db, "127.0.0.1", 8186); }
 
 /* ---------- estado ---------- */
-const S = { tela: "login", aba: "", cart: {}, geo: null, aviso: "", avisoTipo: "", obs: "", datas: {}, uid: null };
+const S = { tela: location.hash === "#cadastro" ? "cadastro" : "login", aba: "", cart: {}, geo: null, aviso: "", avisoTipo: "", obs: "", datas: {}, uid: null };
 const D = { me: null, produtos: [], pedidos: [], usuarios: [], pronto: false };
 const prod = (id) => D.produtos.find((x) => x.id === id);
 let unsubs = [];
@@ -222,7 +222,7 @@ function telaAdmin(u) {
   const pend = D.usuarios.filter((x) => x.tipo === "rev" && x.status === "pendente");
   const ab = [["pedidos", "Pedidos", novos.length], ["cadastros", "Cadastros", pend.length], ["estoque", "Estoque"]];
   if (!S.aba) S.aba = "pedidos";
-  document.title = (novos.length + pend.length ? `(${novos.length + pend.length}) ` : "") + "Portal do Revendedor | Açaí Go";
+  document.title = (novos.length + pend.length ? `(${novos.length + pend.length}) ` : "") + "Portal do Revendedor | Açaí Go PE";
   let corpo = "";
   if (S.aba === "pedidos") {
     const ag = D.pedidos.filter((p) => p.status === "aceito").sort((a, b) => a.entrega.localeCompare(b.entrega));
@@ -373,7 +373,7 @@ $app.addEventListener("click", async (e) => {
     switch (a) {
       case "ir-cadastro": S.tela = "cadastro"; S.aviso = ""; return render(true);
       case "ir-login": S.tela = "login"; S.aviso = ""; return render(true);
-      case "sair": S.tela = "login"; S.aba = ""; S.aviso = ""; await signOut(auth); document.title = "Portal do Revendedor | Açaí Go"; return;
+      case "sair": S.tela = "login"; S.aba = ""; S.aviso = ""; await signOut(auth); document.title = "Portal do Revendedor | Açaí Go PE"; return;
       case "esqueci": {
         const em = (document.querySelector("[name=email]") || {}).value;
         if (!em) { S.aviso = "Digite seu e-mail no campo acima e toque em “Esqueci minha senha”."; S.avisoTipo = ""; return render(true); }
