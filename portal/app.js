@@ -15,14 +15,10 @@ const ms = (t) => (t && t.toMillis ? t.toMillis() : Date.now());
 const fmtHora = (t) => new Date(ms(t)).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
 const soNum = (s) => String(s || "").replace(/\D/g, "");
 
-const SABORES = [
-  { slug: "abacaxi", nome: "Abacaxi", sub: "Delícia de Abacaxi" },
-  { slug: "maracuja", nome: "Maracujá", sub: "Açaí com maracujá" },
-  { slug: "morango", nome: "Morango", sub: "Açaí com morango" },
-  { slug: "pacoca", nome: "Paçoca", sub: "Açaí com paçoca" },
-  { slug: "trufado", nome: "Trufado", sub: "Ninho com Nutella" }
-];
-const nomeSabor = (s) => (SABORES.find((x) => x.slug === s) || {}).nome || s;
+/* Produtos (sabor + tamanho em ml) ficam no Firestore, coleção "produtos". Esta lista só semeia o catálogo na 1ª vez. */
+const SEMENTE = ["Abacaxi", "Maracujá", "Morango", "Paçoca", "Trufado"].map((nome) => ({ nome, ml: 300, preco: 0, estoque: 0, ativo: true }));
+const rotulo = (p) => `${p.nome} ${p.ml} ml`;
+const ordenar = (l) => l.slice().sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR") || a.ml - b.ml);
 
 function toast(t) {
   const el = document.getElementById("toast");
@@ -46,12 +42,13 @@ if (emulador) { connectAuthEmulator(auth, "http://127.0.0.1:9099", { disableWarn
 
 /* ---------- estado ---------- */
 const S = { tela: "login", aba: "", cart: {}, geo: null, aviso: "", avisoTipo: "", obs: "", datas: {}, uid: null };
-const D = { me: null, estoque: {}, precos: {}, pedidos: [], usuarios: [], pronto: false };
+const D = { me: null, produtos: [], pedidos: [], usuarios: [], pronto: false };
+const prod = (id) => D.produtos.find((x) => x.id === id);
 let unsubs = [];
 let pendente = false;
 let jaCarregouPedidos = false;
 
-function parar() { unsubs.forEach((u) => u()); unsubs = []; D.me = null; D.estoque = {}; D.precos = {}; D.pedidos = []; D.usuarios = []; D.pronto = false; jaCarregouPedidos = false; }
+function parar() { unsubs.forEach((u) => u()); unsubs = []; D.me = null; D.produtos = []; D.pedidos = []; D.usuarios = []; D.pronto = false; jaCarregouPedidos = false; }
 
 function ouvir(u) {
   const uid = u.uid;
@@ -66,13 +63,13 @@ function ouvir(u) {
 function ligarDados() {
   const admin = D.me.tipo === "admin";
   const erro = (e) => console.warn("Firestore:", e.code);
-  unsubs.push(onSnapshot(doc(db, "config", "estoque"), async (s) => {
-    if (!s.exists() && admin) { await setDoc(doc(db, "config", "estoque"), Object.fromEntries(SABORES.map((x) => [x.slug, 0]))); await setDoc(doc(db, "contador", "pedidos"), { n: 1000 }).catch(() => {}); return; }
-    D.estoque = s.data() || {}; render(false);
-  }, erro));
-  unsubs.push(onSnapshot(doc(db, "config", "precos"), async (s) => {
-    if (!s.exists() && admin) { await setDoc(doc(db, "config", "precos"), Object.fromEntries(SABORES.map((x) => [x.slug, 0]))); return; }
-    D.precos = s.data() || {}; render(false);
+  if (admin) getDoc(doc(db, "contador", "pedidos")).then((c) => { if (!c.exists()) return setDoc(doc(db, "contador", "pedidos"), { n: 1000 }); }).catch(erro);
+  unsubs.push(onSnapshot(collection(db, "produtos"), async (s) => {
+    if (s.empty && !s.metadata.fromCache && admin && !D._semeou) {
+      D._semeou = true;
+      const w = writeBatch(db); SEMENTE.forEach((p) => w.set(doc(collection(db, "produtos")), { ...p, criado: serverTimestamp() })); await w.commit().catch(erro); return;
+    }
+    D.produtos = s.docs.map((d) => ({ id: d.id, ...d.data() })); render(false);
   }, erro));
   const q = admin ? collection(db, "pedidos") : query(collection(db, "pedidos"), where("revId", "==", D.me.id));
   unsubs.push(onSnapshot(q, (s) => {
@@ -182,7 +179,7 @@ function cardPedido(p, papel) {
   const quem = papel === "admin" ? `<p class="meta"><b>${esc(p.revNegocio)}</b> · ${esc(p.revNome)}${rev ? ` · <a href="https://wa.me/55${soNum(rev.whats)}" target="_blank" rel="noopener">${esc(rev.whats)}</a><br>📍 ${esc(rev.endereco?.rua)}, ${esc(rev.endereco?.num)} — ${esc(rev.endereco?.bairro)}${rev.geo ? ` · <a href="https://www.google.com/maps?q=${rev.geo.lat},${rev.geo.lng}" target="_blank" rel="noopener">abrir no mapa</a>` : ""}` : ""}</p>` : "";
   return `<article class="pedido"><div class="pedido__topo"><h3>Pedido #${p.num}</h3><span class="etq etq--${p.status}">${statusTxt[p.status]}</span></div>
     <p class="meta">${esc(fmtHora(p.criado))}</p>${quem}
-    <ul>${p.itens.map((i) => `<li><span>${i.qtd}× ${esc(i.nome)}</span><span>${brl(i.qtd * i.preco)}</span></li>`).join("")}<li><b>Total</b><b>${brl(p.total)}</b></li></ul>
+    <ul>${p.itens.map((i) => `<li><span>${i.qtd}× ${esc(i.nome)}${i.ml ? ` ${i.ml} ml` : ""}</span><span>${brl(i.qtd * i.preco)}</span></li>`).join("")}<li><b>Total</b><b>${brl(p.total)}</b></li></ul>
     ${p.obs ? `<p class="meta">Obs.: ${esc(p.obs)}</p>` : ""}${extra}${acoes ? `<div class="pedido__acoes">${acoes}</div>` : ""}</article>`;
 }
 const porNum = (a, b) => b.num - a.num;
@@ -194,26 +191,27 @@ function telaRev(u) {
   let corpo;
   if (S.aba === "pedir") {
     corpo = `<h2 style="font-size:1.8rem;margin-bottom:.3rem">Estoque disponível</h2><p class="sub">Escolha as quantidades. O estoque é atualizado em tempo real.</p>
-      <div class="grade">${SABORES.map((s) => {
-        const q = Number(D.estoque[s.slug] || 0), pr = D.precos[s.slug];
+      ${ordenar(D.produtos.filter((p) => p.ativo !== false)).length ? "" : '<p class="vazio">Nenhum produto disponível no momento.</p>'}
+      <div class="grade">${ordenar(D.produtos.filter((p) => p.ativo !== false)).map((s) => {
+        const q = Number(s.estoque || 0), pr = Number(s.preco || 0);
         const cls = q === 0 ? "zero" : q <= 10 ? "baixo" : "ok";
         const off = q === 0 || !pr ? "disabled" : "";
-        return `<div class="cartao"><h3>${s.nome}</h3><p class="meta">${s.sub} · 300 ml</p>
-          <p style="margin:.4rem 0">${pr ? `<b>${brl(pr)}</b> <span class="meta">/ garrafa</span>` : '<span class="meta">preço a combinar</span>'}</p>
+        return `<div class="cartao"><h3>${esc(s.nome)}</h3><p class="meta">${esc(s.ml)} ml</p>
+          <p style="margin:.4rem 0">${pr ? `<b>${brl(pr)}</b> <span class="meta">/ unidade</span>` : '<span class="meta">preço a combinar</span>'}</p>
           <span class="estoque estoque--${cls}">${q === 0 ? "Esgotado" : q <= 10 ? `Últimas ${q}` : `${q} disponíveis`}</span>
-          <div class="qtd"><button type="button" data-acao="qtd" data-s="${s.slug}" data-d="-1" aria-label="Menos ${s.nome}" ${off}>−</button>
-          <input type="number" min="0" max="${q}" value="${Math.min(S.cart[s.slug] || 0, q)}" data-qtd="${s.slug}" aria-label="Quantidade de ${s.nome}" ${off}>
-          <button type="button" data-acao="qtd" data-s="${s.slug}" data-d="1" aria-label="Mais ${s.nome}" ${off}>+</button></div></div>`;
+          <div class="qtd"><button type="button" data-acao="qtd" data-s="${s.id}" data-d="-1" aria-label="Menos ${esc(rotulo(s))}" ${off}>−</button>
+          <input type="number" min="0" max="${q}" value="${Math.min(S.cart[s.id] || 0, q)}" data-qtd="${s.id}" aria-label="Quantidade de ${esc(rotulo(s))}" ${off}>
+          <button type="button" data-acao="qtd" data-s="${s.id}" data-d="1" aria-label="Mais ${esc(rotulo(s))}" ${off}>+</button></div></div>`;
       }).join("")}</div><div class="resumo" id="resumo">${resumoHtml(u)}</div>`;
   } else corpo = meus.length ? meus.map((p) => cardPedido(p, "rev")).join("") : '<p class="vazio">Você ainda não fez pedidos.</p>';
   return casca(u, ab, corpo);
 }
 function resumoHtml(u) {
-  const itens = SABORES.filter((s) => (S.cart[s.slug] || 0) > 0);
-  const total = itens.reduce((t, s) => t + S.cart[s.slug] * (D.precos[s.slug] || 0), 0);
-  const n = itens.reduce((t, s) => t + S.cart[s.slug], 0);
-  return `<div class="resumo__linha"><b>${n ? `${n} garrafa${n > 1 ? "s" : ""}` : "Nenhum item"}</b><b>${brl(total)}</b></div>
-    ${n ? `<p class="meta" style="margin:.3rem 0">${itens.map((s) => `${S.cart[s.slug]}× ${s.nome}`).join(" · ")}</p>` : ""}
+  const itens = D.produtos.filter((s) => (S.cart[s.id] || 0) > 0);
+  const total = itens.reduce((t, s) => t + S.cart[s.id] * Number(s.preco || 0), 0);
+  const n = itens.reduce((t, s) => t + S.cart[s.id], 0);
+  return `<div class="resumo__linha"><b>${n ? `${n} unidade${n > 1 ? "s" : ""}` : "Nenhum item"}</b><b>${brl(total)}</b></div>
+    ${n ? `<p class="meta" style="margin:.3rem 0">${itens.map((s) => `${S.cart[s.id]}× ${esc(rotulo(s))}`).join(" · ")}</p>` : ""}
     <p class="meta" style="margin:.3rem 0">Entrega em: ${esc(u.endereco.rua)}, ${esc(u.endereco.num)} — ${esc(u.endereco.bairro)}</p>
     <label class="campo" style="margin:.5rem 0"><span>Observação para a entrega</span><input id="obsPed" value="${esc(S.obs)}" placeholder="Opcional"></label>
     <button class="btn btn--ouro btn--bloco" data-acao="enviar-pedido" type="button" ${n ? "" : "disabled"}>Enviar pedido</button>`;
@@ -241,10 +239,21 @@ function telaAdmin(u) {
       <div class="pedido__acoes">${r.status !== "aprovado" ? `<button class="btn btn--ok btn--peq" data-acao="aprovar" data-id="${r.id}" type="button">Aprovar</button>` : `<button class="btn btn--vidro btn--peq" data-acao="bloquear" data-id="${r.id}" type="button">Bloquear acesso</button>`}
       ${r.status === "pendente" ? `<button class="btn btn--ruim btn--peq" data-acao="recusar-cad" data-id="${r.id}" type="button">Recusar</button>` : ""}</div></article>`).join("") : '<p class="vazio">Nenhum cadastro ainda.</p>';
   } else {
-    corpo = `<h2 style="font-size:1.6rem;margin-bottom:.3rem">Estoque e preços</h2><p class="sub">Os revendedores veem estes números na hora, ao pedir.</p>
-      <div class="painel"><table class="tabela"><thead><tr><th>Sabor</th><th>Garrafas</th><th>Preço (R$)</th></tr></thead><tbody>
-      ${SABORES.map((s) => `<tr><td>${s.nome}</td><td><input type="number" min="0" data-est="${s.slug}" value="${Number(D.estoque[s.slug] || 0)}" aria-label="Estoque de ${s.nome}"></td><td><input type="number" min="0" step="0.5" data-prec="${s.slug}" value="${Number(D.precos[s.slug] || 0)}" aria-label="Preço de ${s.nome}"></td></tr>`).join("")}
-      </tbody></table><p style="margin-top:1rem"><button class="btn btn--ouro" data-acao="salvar-estoque" type="button">Salvar estoque</button></p></div>`;
+    corpo = `<h2 style="font-size:1.6rem;margin-bottom:.3rem">Produtos, estoque e preços</h2><p class="sub">Cada linha é um produto (sabor + tamanho). Cada alteração é salva ao sair do campo e os revendedores veem na hora. Produto desativado some para eles, mas continua nos pedidos antigos.</p>
+      <div class="painel" style="overflow-x:auto"><table class="tabela"><thead><tr><th>Sabor</th><th>ml</th><th>Estoque</th><th>Preço (R$)</th><th>Ativo</th></tr></thead><tbody>
+      ${ordenar(D.produtos).map((s) => `<tr data-prod="${s.id}"><td><input style="width:130px" type="text" data-campo="nome" value="${esc(s.nome)}" aria-label="Sabor"></td>
+        <td><input type="number" min="1" data-campo="ml" value="${Number(s.ml || 0)}" aria-label="Tamanho em ml"></td>
+        <td><input type="number" min="0" data-campo="estoque" value="${Number(s.estoque || 0)}" aria-label="Estoque de ${esc(rotulo(s))}"></td>
+        <td><input type="number" min="0" step="0.5" data-campo="preco" value="${Number(s.preco || 0)}" aria-label="Preço de ${esc(rotulo(s))}"></td>
+        <td><input type="checkbox" data-campo="ativo" ${s.ativo !== false ? "checked" : ""} style="width:22px;height:22px" aria-label="Ativo"></td></tr>`).join("")}
+      </tbody></table></div>
+      <div class="painel"><h2 style="font-size:1.3rem">Adicionar produto</h2><p class="sub">O mesmo sabor pode ter tamanhos diferentes (ex.: Morango 300 ml e Morango 500 ml).</p>
+        <form data-form="produto" novalidate><div class="linha2"><label class="campo"><span>Sabor *</span><input name="nome" required placeholder="Ex.: Morango"></label>
+          <label class="campo"><span>Tamanho (ml) *</span><input name="ml" type="number" min="1" list="mls" required placeholder="300"><datalist id="mls"><option value="200"><option value="300"><option value="500"><option value="1000"></datalist></label></div>
+          <div class="linha2"><label class="campo"><span>Preço (R$)</span><input name="preco" type="number" min="0" step="0.5" placeholder="0,00"></label>
+          <label class="campo"><span>Estoque inicial</span><input name="estoque" type="number" min="0" placeholder="0"></label></div>
+          <div class="aviso aviso--erro" id="prodErro" hidden></div>
+          <button class="btn btn--ouro" type="submit">Adicionar produto</button></form></div>`;
   }
   return casca(u, ab, corpo);
 }
@@ -256,7 +265,7 @@ function abrirNota(p) {
   el.innerHTML = `<div class="nota" role="dialog" aria-label="Nota do pedido ${p.num}"><h2>Açaí Go Gourmet</h2><p class="peq">Comprovante de pedido nº ${p.num} · ${esc(fmtHora(p.criado))}</p>
     <p style="margin-top:.8rem"><b>${esc(p.revNegocio)}</b><br>${esc(p.revNome)}${rev ? ` · ${esc(rev.whats)}<br>${esc(rev.endereco?.rua)}, ${esc(rev.endereco?.num)} — ${esc(rev.endereco?.bairro)}` : ""}</p>
     <p style="margin-top:.5rem">Entrega: <b>${p.entrega ? esc(fmtDia(p.entrega)) : "a agendar"}</b> · ${statusTxt[p.status]}</p>
-    <table><thead><tr><th>Item</th><th>Qtd</th><th>Unit.</th><th>Subtotal</th></tr></thead><tbody>${p.itens.map((i) => `<tr><td>${esc(i.nome)} 300ml</td><td>${i.qtd}</td><td>${brl(i.preco)}</td><td>${brl(i.qtd * i.preco)}</td></tr>`).join("")}</tbody></table>
+    <table><thead><tr><th>Item</th><th>Qtd</th><th>Unit.</th><th>Subtotal</th></tr></thead><tbody>${p.itens.map((i) => `<tr><td>${esc(i.nome)}${i.ml ? ` ${i.ml}ml` : ""}</td><td>${i.qtd}</td><td>${brl(i.preco)}</td><td>${brl(i.qtd * i.preco)}</td></tr>`).join("")}</tbody></table>
     <p class="tot">Total: ${brl(p.total)}</p><p class="peq">Documento de controle, sem valor fiscal.</p>
     <div class="nota__acoes"><button class="btn btn--ouro" type="button" data-fechar-nota>Fechar</button><button class="btn btn--vidro" type="button" onclick="window.print()" style="color:#222;box-shadow:inset 0 0 0 2px #999">Imprimir</button></div></div>`;
   el.addEventListener("click", (e) => { if (e.target === el || e.target.closest("[data-fechar-nota]")) el.remove(); });
@@ -281,7 +290,7 @@ function render(topo = true) {
 $app.addEventListener("focusout", () => { if (pendente) setTimeout(() => { if (pendente && !($app.contains(document.activeElement) && document.activeElement.matches("input,textarea,select"))) render(false); }, 50); });
 
 function setQtd(slug, v) {
-  const max = Number(D.estoque[slug] || 0);
+  const max = Number((prod(slug) || {}).estoque || 0);
   v = Math.max(0, Math.min(max, Math.floor(Number(v) || 0)));
   S.cart[slug] = v;
   const inp = $app.querySelector(`[data-qtd="${slug}"]`); if (inp) inp.value = v;
@@ -305,6 +314,19 @@ $app.addEventListener("submit", async (e) => {
     catch (er) { S.aviso = msgErro(er); S.avisoTipo = "aviso--erro"; btn.disabled = false; render(true); }
     return;
   }
+  if (tipo === "produto") {
+    const erro = document.getElementById("prodErro");
+    const nome = String(v.nome || "").trim(), ml = Math.floor(Number(v.ml));
+    if (!nome || !(ml > 0)) { erro.textContent = "Informe o sabor e o tamanho em ml."; erro.hidden = false; return; }
+    if (D.produtos.some((p) => p.nome.toLowerCase() === nome.toLowerCase() && Number(p.ml) === ml)) { erro.textContent = `Já existe ${nome} ${ml} ml.`; erro.hidden = false; return; }
+    btn.disabled = true;
+    try {
+      await setDoc(doc(collection(db, "produtos")), { nome, ml, preco: Math.max(0, Number(v.preco) || 0), estoque: Math.max(0, Math.floor(Number(v.estoque) || 0)), ativo: true, criado: serverTimestamp() });
+      toast(`${nome} ${ml} ml adicionado.`); f.reset();
+    } catch (er) { erro.textContent = "Não consegui adicionar. Tente de novo."; erro.hidden = false; }
+    btn.disabled = false;
+    return;
+  }
   if (tipo === "cadastro") {
     const erro = document.getElementById("cadErro");
     const falta = ["nome", "negocio", "whats", "email", "senha", "rua", "num", "bairro"].filter((k) => !String(v[k] || "").trim());
@@ -326,6 +348,20 @@ $app.addEventListener("submit", async (e) => {
     } catch (er) { erro.textContent = msgErro(er); erro.hidden = false; btn.disabled = false; }
     S.criando = false;
   }
+});
+
+/* admin: edição de produto salva ao sair do campo */
+$app.addEventListener("change", async (e) => {
+  const el = e.target, linha = el.closest("[data-prod]");
+  if (!linha || !el.dataset.campo || !D.me || D.me.tipo !== "admin") return;
+  const c = el.dataset.campo; let v;
+  if (c === "nome") { v = el.value.trim(); if (!v) { toast("O sabor não pode ficar vazio."); return render(false); } }
+  else if (c === "ml") { v = Math.floor(Number(el.value)); if (!(v > 0)) { toast("Informe o tamanho em ml."); return render(false); } }
+  else if (c === "estoque") v = Math.max(0, Math.floor(Number(el.value) || 0));
+  else if (c === "preco") v = Math.max(0, Number(el.value) || 0);
+  else if (c === "ativo") v = el.checked;
+  try { await updateDoc(doc(db, "produtos", linha.dataset.prod), { [c]: v }); toast("Salvo ✓"); }
+  catch (er) { toast("Não consegui salvar. Tente de novo."); }
 });
 
 $app.addEventListener("click", async (e) => {
@@ -357,10 +393,10 @@ $app.addEventListener("click", async (e) => {
       }
       case "qtd": return setQtd(b.dataset.s, (S.cart[b.dataset.s] || 0) + Number(b.dataset.d));
       case "enviar-pedido": {
-        const itens = SABORES.filter((s) => (S.cart[s.slug] || 0) > 0).map((s) => ({ slug: s.slug, nome: s.nome, qtd: S.cart[s.slug], preco: Number(D.precos[s.slug] || 0) }));
+        const itens = D.produtos.filter((s) => (S.cart[s.id] || 0) > 0).map((s) => ({ pid: s.id, nome: s.nome, ml: Number(s.ml), qtd: S.cart[s.id], preco: Number(s.preco || 0) }));
         if (!itens.length) return;
-        const sem = itens.find((i) => i.qtd > Number(D.estoque[i.slug] || 0) || !i.preco);
-        if (sem) { toast(`Só temos ${Number(D.estoque[sem.slug] || 0)} de ${sem.nome}.`); return; }
+        const sem = itens.find((i) => i.qtd > Number((prod(i.pid) || {}).estoque || 0) || !i.preco);
+        if (sem) { toast(`Só temos ${Number((prod(sem.pid) || {}).estoque || 0)} de ${sem.nome} ${sem.ml} ml.`); return; }
         b.disabled = true;
         const num = await runTransaction(db, async (t) => {
           const cr = doc(db, "contador", "pedidos"); const c = await t.get(cr);
@@ -379,13 +415,18 @@ $app.addEventListener("click", async (e) => {
         if (!dia) return toast("Escolha a data de entrega.");
         b.disabled = true;
         await runTransaction(db, async (t) => {
-          const pr = doc(db, "pedidos", id), er = doc(db, "config", "estoque"), cr = doc(db, "config", "precos");
-          const [ps, es, cs] = await Promise.all([t.get(pr), t.get(er), t.get(cr)]);
-          const p = ps.data(), est = es.data() || {}, prec = cs.data() || {};
+          const pr = doc(db, "pedidos", id);
+          const ps = await t.get(pr); const p = ps.data();
           if (p.status !== "novo") throw new Error("Este pedido já foi tratado.");
-          const novo = { ...est };
-          const itens = p.itens.map((i) => { if ((novo[i.slug] || 0) < i.qtd) throw new Error(`Estoque insuficiente de ${i.nome} (${novo[i.slug] || 0}).`); novo[i.slug] -= i.qtd; return { ...i, preco: Number(prec[i.slug] ?? i.preco) }; });
-          t.update(er, novo);
+          const refs = p.itens.map((i) => doc(db, "produtos", i.pid));
+          const snaps = await Promise.all(refs.map((r) => t.get(r)));
+          const itens = p.itens.map((i, k) => {
+            const pd = snaps[k].data();
+            if (!pd) throw new Error(`Produto ${i.nome} ${i.ml} ml não existe mais.`);
+            if ((pd.estoque || 0) < i.qtd) throw new Error(`Estoque insuficiente de ${i.nome} ${i.ml} ml (${pd.estoque || 0}).`);
+            return { ...i, preco: Number(pd.preco ?? i.preco) };
+          });
+          itens.forEach((i, k) => t.update(refs[k], { estoque: (snaps[k].data().estoque || 0) - i.qtd }));
           t.update(pr, { status: "aceito", entrega: dia, itens, total: itens.reduce((s, i) => s + i.qtd * i.preco, 0) });
         });
         delete S.datas[id]; toast(`Pedido agendado para ${fmtDia(dia)}.`);
@@ -396,24 +437,19 @@ $app.addEventListener("click", async (e) => {
       case "desfazer": {
         if (!confirm("Cancelar este pedido e devolver as garrafas ao estoque?")) return;
         await runTransaction(db, async (t) => {
-          const pr = doc(db, "pedidos", id), er = doc(db, "config", "estoque");
-          const [ps, es] = await Promise.all([t.get(pr), t.get(er)]);
+          const pr = doc(db, "pedidos", id);
+          const ps = await t.get(pr);
           if (ps.data().status !== "aceito") throw new Error("Este pedido não está mais agendado.");
-          const est = { ...es.data() }; ps.data().itens.forEach((i) => { est[i.slug] = (est[i.slug] || 0) + i.qtd; });
-          t.update(er, est); t.update(pr, { status: "cancelado" });
+          const itens = ps.data().itens, refs = itens.map((i) => doc(db, "produtos", i.pid));
+          const snaps = await Promise.all(refs.map((r) => t.get(r)));
+          itens.forEach((i, k) => { if (snaps[k].exists()) t.update(refs[k], { estoque: (snaps[k].data().estoque || 0) + i.qtd }); });
+          t.update(pr, { status: "cancelado" });
         });
         return toast("Pedido cancelado e estoque devolvido.");
       }
       case "aprovar": await updateDoc(doc(db, "usuarios", id), { status: "aprovado" }); return toast("Cadastro aprovado. A pessoa já pode entrar.");
       case "recusar-cad": await updateDoc(doc(db, "usuarios", id), { status: "recusado" }); return;
       case "bloquear": if (confirm("Bloquear o acesso deste revendedor?")) await updateDoc(doc(db, "usuarios", id), { status: "recusado" }); return;
-      case "salvar-estoque": {
-        const est = {}, prec = {};
-        $app.querySelectorAll("[data-est]").forEach((i) => { est[i.dataset.est] = Math.max(0, Math.floor(Number(i.value) || 0)); });
-        $app.querySelectorAll("[data-prec]").forEach((i) => { prec[i.dataset.prec] = Math.max(0, Number(i.value) || 0); });
-        const w = writeBatch(db); w.set(doc(db, "config", "estoque"), est); w.set(doc(db, "config", "precos"), prec); await w.commit();
-        return toast("Estoque e preços salvos.");
-      }
     }
   } catch (er) {
     console.warn(er);
