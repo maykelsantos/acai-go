@@ -324,3 +324,8 @@ a.cartao:hover { background: #ffffff1c; }
   *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
   .reveal { opacity: 1; transform: none; }
 }
+
+/* passos sobre fundo creme: cores escuras para dar contraste */
+.sec--leite .passo { background: #fffbf0; box-shadow: inset 0 0 0 2px #e8d9b0; }
+.sec--leite .passo h3 { color: #2a0f45; }
+.sec--leite .passo p { color: #5d3f78; }
