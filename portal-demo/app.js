@@ -59,7 +59,7 @@
   /* ---------- estado de tela ---------- */
   const S = { tela: "login", aba: "", msg: null, cart: {}, geo: null, aviso: "" };
 
-  const marca = (link) => `<${link ? "a href=\"../index.html\"" : "div"} class="marca"><img src="../img/logo.png" alt=""><span><b>Açaí<i>Go</i></b><small>Portal do revendedor</small></span></${link ? "a" : "div"}>`;
+  const marca = (link) => `<${link ? "a href=\"../index.html\"" : "div"} class="marca"><img src="../img/logo.png" alt=""><span><b>Açaí<i>Go</i> PE</b><small>Portal do revendedor</small></span></${link ? "a" : "div"}>`;
 
   /* ---------- telas públicas ---------- */
   function telaLogin() {
